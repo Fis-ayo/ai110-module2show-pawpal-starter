@@ -38,8 +38,9 @@ Three changes were made after reviewing the skeleton against potential logic iss
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The scheduler detects conflicts only when two tasks share the **exact same `HH:MM` start time**. It does not detect overlapping durations. For example, a 30-minute task starting at `07:30` runs until `08:00`, so a task starting at `07:45` would actually overlap — but the scheduler will not flag this because `07:30 ≠ 07:45`.
+
+Catching true duration overlaps would require comparing each task's start time against the end times (`start + duration`) of every other task in the same window, turning an O(n) scan into an O(n²) pairwise check. For a pet care app where tasks are loosely spaced throughout the day (morning walk, midday feeding, evening play), exact-start-time matching catches the most common mistake — accidentally scheduling two things at the same time — without that added complexity. If tasks became fine-grained enough that 15-minute overlaps mattered, the `detect_all_conflicts` method is the right place to extend: replace the equality check with an interval-overlap check using each task's `preferred_time` and `duration_minutes`.
 
 ---
 
