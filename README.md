@@ -40,6 +40,39 @@ Tasks can be marked `"daily"` or `"weekly"`. When `Pet.complete_task(task)` is c
 
 ---
 
+## Testing PawPal+
+
+### Running the tests
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+### What the tests cover
+
+| Area | Tests |
+|---|---|
+| **Sorting** | Tasks sort chronologically by `HH:MM`; untimed tasks always land last |
+| **Priority filtering** | `get_tasks_by_priority` returns HIGH → MEDIUM → LOW and excludes completed tasks |
+| **Recurrence — daily** | Completing a daily task produces a new Task due tomorrow |
+| **Recurrence — weekly** | Completing a weekly task produces a new Task due in 7 days |
+| **Recurrence — one-off** | Completing a one-off task returns `None` (no next occurrence) |
+| **Recurrence count** | `recurrence_count` increments each time a task is completed |
+| **Pet task list growth** | `Pet.complete_task()` appends the next occurrence; one-off tasks don't grow the list |
+| **Conflict detection** | Two tasks at the same time produce a `WARNING`; different times produce none |
+| **Conflict — completed tasks** | A completed task at a shared time does NOT trigger a false conflict |
+| **Cross-pet conflicts** | `detect_all_conflicts()` catches collisions across different pets |
+
+16 tests, 16 passed (0.01 s).
+
+### Confidence Level
+
+**★★★★☆ (4 / 5)**
+
+The core scheduling behaviors — sorting, recurrence, conflict detection, and priority filtering — are all verified and passing. The gap keeping this from 5 stars: `generate_schedule` (the full time-budget greedy loop) and `filter_tasks` are not yet directly tested, so edge cases around a task that exactly fills the remaining budget, or cross-pet filtering combinations, remain unverified.
+
+---
+
 ## Getting started
 
 ### Setup
