@@ -8,6 +8,16 @@ st.title("🐾 PawPal+")
 
 st.divider()
 
+
+def priority_badge(priority: Priority) -> str:
+    """Return an emoji label for visual priority scanning in tables."""
+    badges = {
+        Priority.HIGH: "🔴 HIGH",
+        Priority.MEDIUM: "🟡 MEDIUM",
+        Priority.LOW: "🟢 LOW",
+    }
+    return badges.get(priority, priority.name)
+
 # --- Session state init ---
 if "owner" not in st.session_state:
     st.session_state.owner = None
@@ -110,11 +120,47 @@ if st.session_state.pet and st.session_state.pet.tasks:
             tasks_to_show = scheduler.sort_by_time(tasks_to_show)
 
     if tasks_to_show:
-        st.table([t.to_dict() for t in tasks_to_show])
+        task_rows = []
+        for task in tasks_to_show:
+            row = task.to_dict()
+            row["priority"] = priority_badge(task.priority)
+            task_rows.append(row)
+        st.table(task_rows)
     else:
         st.info("No tasks match this filter.")
 else:
     st.info("No tasks yet. Add one above.")
+
+st.divider()
+
+# --- Next available slot helper ---
+st.subheader("Find Next Available Slot")
+
+slot_duration = st.number_input(
+    "New task duration (minutes)",
+    min_value=1,
+    max_value=240,
+    value=20,
+    key="slot_duration",
+)
+
+if st.button("Suggest slot"):
+    if st.session_state.owner is None or st.session_state.pet is None:
+        st.warning("Save an owner and pet first.")
+    else:
+        owner = st.session_state.owner
+        pet = st.session_state.pet
+        scheduler = Scheduler(owner)
+        slot = scheduler.find_next_available_slot(
+            pet,
+            duration_minutes=int(slot_duration),
+            day_start="06:00",
+            day_end="22:00",
+        )
+        if slot:
+            st.success(f"Earliest open slot: {slot}")
+        else:
+            st.warning("No free slot found between 06:00 and 22:00 for that duration.")
 
 st.divider()
 
@@ -165,7 +211,7 @@ if st.button("Generate schedule"):
                     "Time": task.preferred_time if task.preferred_time else "anytime",
                     "Task": task.title,
                     "Duration (min)": task.duration_minutes,
-                    "Priority": task.priority.name,
+                    "Priority": priority_badge(task.priority),
                     "Recurrence": task.frequency if task.frequency else "one-off",
                     "Note": "⚠️ Conflict" if has_conflict else "✓ Scheduled",
                 })
