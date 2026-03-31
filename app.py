@@ -65,16 +65,54 @@ if st.button("Add task"):
         st.success(f"Added: {task_title}")
 
 if st.session_state.pet and st.session_state.pet.tasks:
-    status_filter = st.radio("Filter tasks", ["All", "Pending", "Completed"], horizontal=True)
     pet = st.session_state.pet
+    owner = st.session_state.owner
+
+    # --- Conflict warnings shown inline with task list ---
+    if owner:
+        scheduler = Scheduler(owner)
+        conflicts = scheduler.detect_conflicts(pet)
+        if conflicts:
+            st.error(f"⚠️ {len(conflicts)} time conflict(s) detected — review before generating your schedule.")
+            for conflict in conflicts:
+                # Parse out the time and task names for a helpful message
+                # conflict format: "WARNING [PetName] HH:MM: 'task1, task2' overlap"
+                clean = conflict.replace("WARNING ", "").replace(f"[{pet.name}] ", "")
+                st.warning(
+                    f"**Scheduling conflict:** {clean}\n\n"
+                    "_Two tasks are set for the same time. Consider changing one task's time "
+                    "or marking it as 'anytime' so PawPal+ can fit it around the other._"
+                )
+
+    col_filter, col_sort = st.columns(2)
+    with col_filter:
+        status_filter = st.radio("Filter tasks", ["All", "Pending", "Completed"], horizontal=True)
+    with col_sort:
+        sort_mode = st.radio("Sort by", ["Priority", "Time"], horizontal=True)
+
     if status_filter == "Pending":
         tasks_to_show = pet.get_tasks_by_status(completed=False)
     elif status_filter == "Completed":
         tasks_to_show = pet.get_tasks_by_status(completed=True)
     else:
-        tasks_to_show = pet.tasks
-    st.write("Current tasks:")
-    st.table([t.to_dict() for t in tasks_to_show])
+        tasks_to_show = list(pet.tasks)
+
+    # Apply Scheduler-based sorting
+    if owner and tasks_to_show:
+        scheduler = Scheduler(owner)
+        if sort_mode == "Priority":
+            # Use get_tasks_by_priority (pending only) or fall back to raw list
+            pending_sorted = scheduler.get_all_tasks(pet)
+            completed_tasks = [t for t in tasks_to_show if t.is_completed]
+            pending_in_view = [t for t in pending_sorted if t in tasks_to_show]
+            tasks_to_show = pending_in_view + completed_tasks
+        else:
+            tasks_to_show = scheduler.sort_by_time(tasks_to_show)
+
+    if tasks_to_show:
+        st.table([t.to_dict() for t in tasks_to_show])
+    else:
+        st.info("No tasks match this filter.")
 else:
     st.info("No tasks yet. Add one above.")
 
@@ -89,11 +127,58 @@ if st.button("Generate schedule"):
     elif not st.session_state.pet.tasks:
         st.warning("Add at least one task before generating a schedule.")
     else:
-        scheduler = Scheduler(st.session_state.owner)
+        owner = st.session_state.owner
         pet = st.session_state.pet
+        scheduler = Scheduler(owner)
+
+        # Show conflict warnings prominently before the schedule
         conflicts = scheduler.detect_conflicts(pet)
-        for c in conflicts:
-            st.warning(c)
+        if conflicts:
+            st.error(f"⚠️ {len(conflicts)} conflict(s) found in your schedule. Tasks with the same time will be flagged below.")
+            for conflict in conflicts:
+                clean = conflict.replace("WARNING ", "").replace(f"[{pet.name}] ", "")
+                st.warning(
+                    f"**Conflict:** {clean}\n\n"
+                    "_Both tasks will still be scheduled, but you may want to adjust "
+                    "one of them to avoid a real-time rush._"
+                )
+
         schedule = scheduler.generate_schedule(pet)
-        st.success("Schedule generated!")
-        st.text(scheduler.summary(schedule, pet))
+
+        if not schedule.scheduled_tasks:
+            st.warning("No tasks fit within your available time. Try increasing available minutes or reducing task durations.")
+        else:
+            # Summary metrics
+            remaining = owner.available_minutes - schedule.total_duration
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Tasks scheduled", len(schedule.scheduled_tasks))
+            col_b.metric("Time used (min)", schedule.total_duration)
+            col_c.metric("Time remaining (min)", remaining)
+
+            st.success(f"Schedule ready for {pet.name}!")
+
+            # Render each scheduled entry as a structured table
+            rows = []
+            for task, reason in schedule.explanations:
+                has_conflict = "CONFLICT" in reason
+                rows.append({
+                    "Time": task.preferred_time if task.preferred_time else "anytime",
+                    "Task": task.title,
+                    "Duration (min)": task.duration_minutes,
+                    "Priority": task.priority.name,
+                    "Recurrence": task.frequency if task.frequency else "one-off",
+                    "Note": "⚠️ Conflict" if has_conflict else "✓ Scheduled",
+                })
+
+            st.table(rows)
+
+            # Separate callout for any conflicting entries in the schedule
+            conflicted = [(t, r) for t, r in schedule.explanations if "CONFLICT" in r]
+            if conflicted:
+                st.warning(
+                    f"**{len(conflicted)} task(s) in your schedule overlap with another task's time slot.** "
+                    "They are still included — but you should check whether your pet can realistically "
+                    "do both at the same time, or reschedule one to a different hour."
+                )
+                for task, reason in conflicted:
+                    st.caption(f"• **{task.title}** at {task.preferred_time}: {reason}")
