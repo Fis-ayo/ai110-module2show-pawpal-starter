@@ -79,6 +79,24 @@ def test_get_tasks_by_priority_excludes_completed():
     assert result[0].title == "Pending task"
 
 
+def test_generate_schedule_is_priority_first_then_time():
+    """Schedule generation should prefer priority before chronological order."""
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Low early", duration_minutes=10, priority=Priority.LOW, preferred_time="07:00"))
+    pet.add_task(Task("High later", duration_minutes=10, priority=Priority.HIGH, preferred_time="09:00"))
+    pet.add_task(Task("Medium earliest", duration_minutes=10, priority=Priority.MEDIUM, preferred_time="06:30"))
+
+    owner = Owner(name="Ada", available_minutes=60, pets=[pet])
+    scheduler = Scheduler(owner)
+    schedule = scheduler.generate_schedule(pet)
+
+    assert [t.title for t in schedule.scheduled_tasks] == [
+        "High later",
+        "Medium earliest",
+        "Low early",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Recurrence logic
 # ---------------------------------------------------------------------------
@@ -222,3 +240,66 @@ def test_detect_all_conflicts_cross_pet():
     assert "18:00" in warnings[0]
     assert "Mochi" in warnings[0]
     assert "Luna" in warnings[0]
+
+
+# ---------------------------------------------------------------------------
+# Advanced capability: next available slot
+# ---------------------------------------------------------------------------
+
+def test_find_next_available_slot_returns_earliest_gap():
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Breakfast", duration_minutes=20, priority=Priority.HIGH, preferred_time="08:00"))
+    pet.add_task(Task("Walk", duration_minutes=30, priority=Priority.MEDIUM, preferred_time="09:00"))
+
+    owner = Owner(name="Ada", available_minutes=120, pets=[pet])
+    scheduler = Scheduler(owner)
+
+    slot = scheduler.find_next_available_slot(
+        pet,
+        duration_minutes=30,
+        day_start="07:00",
+        day_end="10:00",
+    )
+
+    assert slot == "07:00"
+
+
+def test_find_next_available_slot_ignores_completed_and_untimed():
+    pet = Pet(name="Mochi", species="dog")
+
+    completed = Task("Done", duration_minutes=60, priority=Priority.HIGH, preferred_time="08:00")
+    completed.mark_complete()
+    pet.add_task(completed)
+
+    pet.add_task(Task("Untimed", duration_minutes=90, priority=Priority.LOW))
+    pet.add_task(Task("Timed", duration_minutes=30, priority=Priority.MEDIUM, preferred_time="09:00"))
+
+    owner = Owner(name="Ada", available_minutes=120, pets=[pet])
+    scheduler = Scheduler(owner)
+
+    slot = scheduler.find_next_available_slot(
+        pet,
+        duration_minutes=20,
+        day_start="08:00",
+        day_end="10:00",
+    )
+
+    assert slot == "08:00"
+
+
+def test_find_next_available_slot_returns_none_when_no_space():
+    pet = Pet(name="Mochi", species="dog")
+    pet.add_task(Task("Block 1", duration_minutes=60, priority=Priority.HIGH, preferred_time="08:00"))
+    pet.add_task(Task("Block 2", duration_minutes=60, priority=Priority.HIGH, preferred_time="09:00"))
+
+    owner = Owner(name="Ada", available_minutes=120, pets=[pet])
+    scheduler = Scheduler(owner)
+
+    slot = scheduler.find_next_available_slot(
+        pet,
+        duration_minutes=30,
+        day_start="08:00",
+        day_end="10:00",
+    )
+
+    assert slot is None
