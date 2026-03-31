@@ -1,0 +1,66 @@
+classDiagram
+    class Priority {
+        <<enumeration>>
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +Priority priority
+        +bool is_completed
+        +str preferred_time
+        +str frequency
+        +int recurrence_count
+        +date due_date
+        +mark_complete() Task
+        +to_dict() dict
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +list~Task~ tasks
+        +add_task(task: Task) None
+        +complete_task(task: Task) Task
+        +get_tasks_by_priority() list~Task~
+        +get_tasks_by_status(completed: bool) list~Task~
+    }
+
+    class Owner {
+        +str name
+        +int available_minutes
+        +list~Pet~ pets
+        +add_pet(pet: Pet) None
+        +get_all_tasks() list~Task~
+        +get_tasks_for_pet(pet_name: str) list~Task~
+    }
+
+    class Schedule {
+        +list~Task~ scheduled_tasks
+        +int total_duration
+        +list explanations
+        +add_entry(task: Task, reason: str) None
+        +display() str
+    }
+
+    class Scheduler {
+        +Owner owner
+        +sort_by_time(tasks: list~Task~) list~Task~
+        +filter_tasks(pet_name, completed) list~Task~
+        +detect_conflicts(pet: Pet) list~str~
+        +detect_all_conflicts() list~str~
+        +generate_schedule(pet: Pet) Schedule
+        +get_all_tasks(pet: Pet) list~Task~
+        +summary(schedule: Schedule, pet: Pet) str
+    }
+
+    Task --> Priority : uses
+    Pet "1" *-- "many" Task : contains
+    Owner "1" *-- "many" Pet : owns
+    Schedule o-- Task : schedules
+    Scheduler --> Owner : manages
+    Scheduler ..> Pet : analyzes
+    Scheduler ..> Schedule : produces
