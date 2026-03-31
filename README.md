@@ -9,11 +9,16 @@
 ### Smart Scheduling
 PawPal+ uses a priority-first, time-aware greedy algorithm to build a daily plan that fits within your available minutes. Tasks are included in order of urgency, and the scheduler explains why each task was chosen (or skipped).
 
-### Chronological Sorting
-Tasks with a preferred time (`HH:MM`) are displayed and scheduled in chronological order. Because the time strings are zero-padded, they sort correctly with a simple string comparison — no datetime parsing needed. Tasks with no preferred time always appear last.
+### Chronological Sorting Utility
+Tasks with a preferred time (`HH:MM`) can be sorted chronologically in the task list. Because the time strings are zero-padded, they sort correctly with a simple string comparison — no datetime parsing needed. Tasks with no preferred time always appear last.
 
 ### Priority-Based Ordering
-Tasks can be marked **HIGH**, **MEDIUM**, or **LOW** priority. `get_tasks_by_priority()` returns only pending tasks, ranked from highest to lowest, so the most critical care always gets scheduled first.
+Tasks can be marked **HIGH**, **MEDIUM**, or **LOW** priority. Schedule generation uses **priority first, then time** within each priority band, so urgent care is planned before lower-priority work.
+
+In the Streamlit tables, priority is visually coded with emoji badges:
+- 🔴 HIGH
+- 🟡 MEDIUM
+- 🟢 LOW
 
 ### Conflict Detection
 If two pending tasks share the exact same start time, PawPal+ raises a visible warning in both the task list and the schedule view. The warning names the specific tasks and time, and suggests how to resolve the overlap — before it causes a real-time rush for your pet.
@@ -26,6 +31,23 @@ Switch between **All**, **Pending**, and **Completed** views of your task list a
 
 ### Schedule Summary
 After generating a schedule, a three-metric dashboard shows tasks scheduled, total time used, and time remaining. The full schedule renders as a structured table with a conflict badge (`⚠️ Conflict` or `✓ Scheduled`) on each row.
+
+### Next Available Slot (Advanced Capability)
+PawPal+ now includes a gap-finding algorithm that suggests the **earliest available start time** for a new task duration.
+
+- Input: task duration (minutes)
+- Scan window: `06:00` to `22:00`
+- Constraints: uses all **pending timed tasks** as occupied blocks
+- Output: the earliest `HH:MM` slot where the task fits, or no-slot-found if the day is full
+
+Algorithm details:
+- Converts times to minutes after midnight for reliable interval math
+- Builds occupied intervals from existing tasks (`preferred_time` + duration)
+- Merges overlapping intervals
+- Scans from day start to find the first gap large enough for the requested duration
+- Returns a zero-padded `HH:MM` time suggestion
+
+This capability is available in the Streamlit app via **Find Next Available Slot**.
 
 ---
 
@@ -86,6 +108,7 @@ python -m pytest tests/test_pawpal.py -v
 |---|---|
 | Chronological sorting | Tasks sort by `HH:MM`; untimed tasks always land last |
 | Priority filtering | `get_tasks_by_priority` returns HIGH → MEDIUM → LOW; excludes completed tasks |
+| Priority-first schedule | `generate_schedule` orders HIGH → MEDIUM → LOW, then by `HH:MM` within each level |
 | Recurrence — daily | Completing a daily task produces a new Task due tomorrow |
 | Recurrence — weekly | Completing a weekly task produces a new Task due in 7 days |
 | Recurrence — one-off | Completing a one-off task returns `None` (no next occurrence) |
@@ -94,5 +117,24 @@ python -m pytest tests/test_pawpal.py -v
 | Conflict detection | Two tasks at the same time produce a warning; different times do not |
 | Conflict — completed tasks | A completed task at a shared time does not trigger a false positive |
 | Cross-pet conflicts | `detect_all_conflicts()` catches collisions across different pets |
+| Next available slot | Earliest valid gap is found; completed/untimed tasks are ignored; full-day returns `None` |
 
-16 tests · 16 passed
+20 tests · 20 passed
+
+---
+
+## Agent Mode Implementation Notes
+
+For this challenge, Agent Mode was used to implement the advanced algorithm end-to-end:
+
+1. Inspected `Scheduler` and test structure to find the safest extension point.
+2. Implemented `find_next_available_slot()` in `pawpal_system.py` using interval-merge + earliest-gap search.
+3. Added targeted pytest coverage for happy path, filtering behavior, and no-fit edge case.
+4. Integrated the feature into `app.py` so the algorithm can be used interactively.
+5. Verified behavior with the project test suite.
+
+Files touched:
+- `pawpal_system.py`
+- `tests/test_pawpal.py`
+- `app.py`
+- `README.md`
