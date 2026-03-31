@@ -96,6 +96,11 @@ requirements.txt
 
 ---
 
+## Demo
+<img width="1440" height="900" alt="Screenshot 2026-03-31 at 11 29 10 AM" src="https://github.com/user-attachments/assets/cd5f4409-706a-41ac-af24-fd0852b0b067" />
+
+---
+
 ## Running Tests
 
 ```bash
