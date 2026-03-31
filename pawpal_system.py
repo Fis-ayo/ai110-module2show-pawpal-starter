@@ -207,6 +207,35 @@ class Scheduler:
     def __init__(self, owner: Owner) -> None:
         self.owner = owner
 
+    @staticmethod
+    def _time_to_minutes(time_str: str) -> int | None:
+        """Convert HH:MM to minutes after midnight, or None if invalid."""
+        parts = time_str.split(":")
+        if len(parts) != 2:
+            return None
+        if not parts[0].isdigit() or not parts[1].isdigit():
+            return None
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+            return None
+        return hours * 60 + minutes
+
+    @staticmethod
+    def _minutes_to_time(total_minutes: int) -> str:
+        """Convert minutes after midnight back to zero-padded HH:MM."""
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        return f"{hours:02d}:{minutes:02d}"
+
+    @staticmethod
+    def _round_up(value: int, step: int) -> int:
+        """Round value up to the nearest step interval."""
+        if step <= 1:
+            return value
+        remainder = value % step
+        return value if remainder == 0 else value + (step - remainder)
+
     def sort_by_time(self, tasks: list[Task]) -> list[Task]:
         """Return tasks sorted by preferred_time in ascending 'HH:MM' order.
 
@@ -315,18 +344,19 @@ class Scheduler:
     def generate_schedule(self, pet: Pet) -> Schedule:
         """Build a Schedule by fitting tasks within the owner's available time.
 
-        Tasks are ordered chronologically by preferred_time (HH:MM), then by
-        descending priority within the same time. Tasks with no time appear last.
+        Tasks are ordered by descending priority first, then chronologically by
+        preferred_time (HH:MM) within each priority band. Tasks with no time
+        appear last within their priority band.
         Conflicts are noted in the reason string.
         """
         schedule = Schedule()
         remaining = self.owner.available_minutes
 
         tasks = sorted(
-            pet.get_tasks_by_priority(),
+            (t for t in pet.tasks if not t.is_completed),
             key=lambda t: (
-                t.preferred_time if t.preferred_time else "99:99",
                 -t.priority.value,
+                t.preferred_time if t.preferred_time else "99:99",
             ),
         )
 
@@ -358,6 +388,61 @@ class Scheduler:
                 remaining -= task.duration_minutes
 
         return schedule
+
+    def find_next_available_slot(
+        self,
+        pet: Pet,
+        duration_minutes: int,
+        day_start: str = "06:00",
+        day_end: str = "22:00",
+        granularity_minutes: int = 5,
+    ) -> str | None:
+        """Return the earliest free HH:MM slot for a new task duration.
+
+        This scans pending, time-stamped tasks as occupied windows and returns
+        the earliest start time where a new task of duration_minutes can fit
+        between day_start and day_end.
+        """
+        if duration_minutes <= 0:
+            return None
+
+        start_min = self._time_to_minutes(day_start)
+        end_min = self._time_to_minutes(day_end)
+        if start_min is None or end_min is None or start_min >= end_min:
+            return None
+
+        intervals: list[tuple[int, int]] = []
+        for task in pet.tasks:
+            if task.is_completed or not task.preferred_time:
+                continue
+            task_start = self._time_to_minutes(task.preferred_time)
+            if task_start is None:
+                continue
+            task_end = task_start + task.duration_minutes
+            if task_end <= start_min or task_start >= end_min:
+                continue
+            intervals.append((max(task_start, start_min), min(task_end, end_min)))
+
+        intervals.sort(key=lambda pair: pair[0])
+
+        merged: list[list[int]] = []
+        for start, end in intervals:
+            if not merged or start > merged[-1][1]:
+                merged.append([start, end])
+            else:
+                merged[-1][1] = max(merged[-1][1], end)
+
+        cursor = self._round_up(start_min, granularity_minutes)
+        for busy_start, busy_end in merged:
+            candidate = self._round_up(cursor, granularity_minutes)
+            if candidate + duration_minutes <= busy_start:
+                return self._minutes_to_time(candidate)
+            cursor = max(cursor, busy_end)
+
+        candidate = self._round_up(cursor, granularity_minutes)
+        if candidate + duration_minutes <= end_min:
+            return self._minutes_to_time(candidate)
+        return None
 
     def get_all_tasks(self, pet: Pet) -> list[Task]:
         """Return all incomplete tasks for a pet, sorted by priority."""
